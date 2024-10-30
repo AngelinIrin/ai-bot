@@ -1,0 +1,23 @@
+<template>
+    <div class="chat-container">
+        <h2>Hi, Nice to meet you! Ask me whatever you want, I'm ready to help you.</h2>
+        
+        <!-- Display spinner while loading response -->
+        <template if:true={isLoading}>
+            <lightning-spinner alternative-text="Loading" size="small" class="spinner"></lightning-spinner>
+        </template>
+
+        <!-- Display chat messages -->
+        <template for:each={formattedChatMessages} for:item="msg">
+            <div key={msg.message} class={msg.role}>
+                <strong>{msg.label}:</strong> {msg.message}
+            </div>
+        </template>
+    </div>
+    
+    <div class="static-container">
+        <lightning-input label="Your Message" class="inputBox" value={userInput} onchange={handleInputChange} onkeypress={handleKeyPress}></lightning-input> 
+        <lightning-button label="Send" class="send" onclick={handleSendMessage}></lightning-button>
+        <lightning-button label="Clear" class="clear slds-m-left_small" onclick={handleClearMessages}></lightning-button>
+    </div>
+</template>
