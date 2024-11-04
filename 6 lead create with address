@@ -1,0 +1,143 @@
+public with sharing class CVHS_ChatBot {
+    private static final String MODEL_NAME = 'sfdc_ai__DefaultGPT35Turbo';
+
+    @AuraEnabled
+    public static String getChatResponse(String userMessage) {
+        try {
+            // Check if the user wants to enroll
+            if (userMessage != null && userMessage.contains('enroll')) {
+                return 'Please provide your name, email, phone number, birthdate (YYYY-MM-DD), and address to proceed with enrollment.';
+            }
+
+            // Use the AI model to identify details in the message
+            String leadResponse = extractLeadDetails(userMessage);
+            if (leadResponse != null) {
+                return leadResponse;
+            }
+
+            // Construct the chat message based on user input
+            List<ChatMessage> messages = new List<ChatMessage>();
+            messages.add(new ChatMessage('user', userMessage));
+
+            // Send the request to the API and get the response
+            String responseContent = sendChatRequest(messages);
+            System.debug('responseContent: ' + responseContent);
+            return responseContent != null ? responseContent : 'No response generated.';
+        } catch (Exception e) {
+            System.debug('Error generating chat response: ' + e.getMessage());
+            return 'An error occurred while processing your message.';
+        }
+    }
+
+    private static String extractLeadDetails(String userMessage) {
+        try {
+            // Construct a prompt for the AI model to extract all required details in JSON format
+            List<ChatMessage> messages = new List<ChatMessage>();
+            messages.add(new ChatMessage('system', 
+                'Extract the following details in JSON format: ' +
+                '{"Name": "Full Name", "Email": "email@example.com", "Phone": "+1234567890", "Birthdate": "YYYY-MM-DD", "Address": "Full Address"}'));
+            messages.add(new ChatMessage('user', userMessage));
+
+            // Send the request to the API for pattern extraction
+            String extractionResponse = sendChatRequest(messages);
+            System.debug('extractionResponse: ' + extractionResponse);
+
+            // Attempt to parse the AI response as JSON
+            if (extractionResponse != null && extractionResponse.startsWith('{')) {
+                Map<String, Object> extractedDetails = (Map<String, Object>) JSON.deserializeUntyped(extractionResponse);
+
+                String name = (String) extractedDetails.get('Name');
+                String email = (String) extractedDetails.get('Email');
+                String phone = (String) extractedDetails.get('Phone');
+                String birthdate = (String) extractedDetails.get('Birthdate');
+                String address = (String) extractedDetails.get('Address');
+
+                if (name != null && email != null && phone != null && birthdate != null && address != null) {
+                    // Create lead and return response
+                    return createLead(name, email, phone, birthdate, address);
+                }
+            } else {
+                System.debug('AI did not return structured data. Extraction response: ' + extractionResponse);
+            }
+        } catch (Exception e) {
+            System.debug('Error extracting lead details: ' + e.getMessage());
+        }
+
+        return null; // No valid details found
+    }
+
+    // Helper method to send chat requests to the API
+    private static String sendChatRequest(List<ChatMessage> messages) {
+        aiplatform.ModelsAPI modelsAPI = new aiplatform.ModelsAPI();
+        aiplatform.ModelsAPI.createChatGenerations_Request request = new aiplatform.ModelsAPI.createChatGenerations_Request();
+        aiplatform.ModelsAPI_ChatGenerationsRequest body = new aiplatform.ModelsAPI_ChatGenerationsRequest();
+
+        // Set model name
+        request.modelName = MODEL_NAME;
+
+        // Convert chat messages to API message requests
+        body.messages = new List<aiplatform.ModelsAPI_ChatMessageRequest>();
+        for (ChatMessage msg : messages) {
+            aiplatform.ModelsAPI_ChatMessageRequest messageRequest = new aiplatform.ModelsAPI_ChatMessageRequest();
+            messageRequest.content = msg.message;
+            messageRequest.role = msg.role;
+            body.messages.add(messageRequest);
+        }
+
+        request.body = body;
+
+        try {
+            // Make the API call and get the response
+            aiplatform.ModelsAPI.createChatGenerations_Response response = modelsAPI.createChatGenerations(request);
+
+            // Return the content of the first response
+            if (response?.Code200?.generationDetails?.generations != null &&
+                !response.Code200.generationDetails.generations.isEmpty()) {
+                return response.Code200.generationDetails.generations[0].content;
+            } else {
+                return 'No response generated.';
+            }
+        } catch (aiplatform.ModelsAPI.createChatGenerations_ResponseException e) {
+            System.debug('API Error: ' + e.getMessage());
+            return 'Error retrieving response: ' + e.getMessage();
+        }
+    }
+
+    // Method to create a Lead record
+    @AuraEnabled
+    public static String createLead(String name, String email, String phone, String birthdate, String address) {
+        try {
+            Lead newLead = new Lead();
+            newLead.LastName = name; // You may want to split the name into first and last based on your use case
+            newLead.Email = email;
+            newLead.Phone = phone;
+            newLead.Birthdate = Date.valueOf(birthdate); // Assuming you have a custom field for birthdate
+
+            // Parse address into individual fields
+            List<String> addressParts = address.split(', ');
+            if (addressParts.size() >= 1) newLead.Street = addressParts[0];
+            if (addressParts.size() >= 2) newLead.City = addressParts[1];
+            if (addressParts.size() >= 3) newLead.State = addressParts[2];
+            if (addressParts.size() >= 4) newLead.PostalCode = addressParts[3];
+            if (addressParts.size() >= 5) newLead.Country = addressParts[4];
+
+            insert newLead; // Insert the lead record
+
+            return 'Lead created successfully with ID: ' + newLead.Id + '. We will reach you through the email provided.';
+        } catch (DmlException e) {
+            System.debug('Error creating lead: ' + e.getMessage());
+            return 'Error creating lead: ' + e.getMessage();
+        }
+    }
+
+    // Inner class to represent chat messages
+    public class ChatMessage {
+        public String role;
+        public String message;
+
+        public ChatMessage(String role, String message) {
+            this.role = role;
+            this.message = message;
+        }
+    }
+}
