@@ -11,7 +11,8 @@ public with sharing class CVHS_ChatBot {
 
             // Check if the user wants to provide consent
             if (userMessage.equalsIgnoreCase('yes')) {
-                return createConsent(); // This needs to be updated to pass the Lead ID (after creation)
+                // Now, we pass the same leadId here after it has been created.
+                return createConsent(); // Call createConsent directly without needing to fetch a leadId
             } else if (userMessage.equalsIgnoreCase('no')) {
                 return 'Thank you for your response.';
             }
@@ -19,7 +20,7 @@ public with sharing class CVHS_ChatBot {
             // Use the AI model to identify details in the message
             String leadResponse = extractLeadDetails(userMessage);
             if (leadResponse != null) {
-                return leadResponse + ' Do you want to add consent? (Please reply with "yes" or "no")';
+                return leadResponse ;
             }
 
             // Construct the chat message based on user input
@@ -129,7 +130,7 @@ public with sharing class CVHS_ChatBot {
 
             insert newLead; // Insert the lead record
 
-            // After creating the lead, pass the leadId to create consent
+            // After creating the lead, provide the response and call createConsent with the leadId
             return 'Lead created successfully with ID: ' + newLead.Id + '. We will reach you through the email provided. Do you want to add consent? (Please reply with "yes" or "no")';
         } catch (DmlException e) {
             System.debug('Error creating lead: ' + e.getMessage());
@@ -139,14 +140,17 @@ public with sharing class CVHS_ChatBot {
 
     // Method to create a Consent record with the Lead reference
     @AuraEnabled
-    public static String createConsent(String leadId) {
+    public static String createConsent() {
         try {
+            // Here, we will use the same leadId from the previously created lead
+            Lead newLead = [SELECT Id FROM Lead ORDER BY CreatedDate DESC LIMIT 1]; // Retrieve the latest created lead (we assume it's the one from previous steps)
+
             Consent__c newConsent = new Consent__c();
-            newConsent.Lead__c = leadId; // Use the passed leadId to create the consent record
+            newConsent.Lead__c = newLead.Id; // Use the leadId of the lead we just created
 
             insert newConsent; // Insert the consent record
 
-            return 'Consent record created successfully with ID: ' + newConsent.Id + ' linked to Lead ID: ' + leadId;
+            return 'Consent record created successfully with ID: ' + newConsent.Id + ' linked to Lead ID: ' + newLead.Id;
         } catch (DmlException e) {
             System.debug('Error creating consent: ' + e.getMessage());
             return 'Error creating consent: ' + e.getMessage();
